@@ -18,7 +18,7 @@ export { generateContentJs } from './contentScriptTemplate.ts';
  * então um erro de sintaxe trava o build em vez de gerar uma extensão morta.
  */
 
-const EXTENSION_VERSION = '3.1.0';
+const EXTENSION_VERSION = '3.2.0';
 
 export function generateExtensionManifest(): string {
   const manifest = {

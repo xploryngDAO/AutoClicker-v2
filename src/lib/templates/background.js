@@ -129,38 +129,19 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.status !== 'complete') return;
   if (!tab || !tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('edge://')) return;
 
-  const { rpaRecordingSession, rpaExecutionSession } = await readStorage([
-    'rpaRecordingSession',
-    'rpaExecutionSession',
-  ]);
+  const { rpaRecordingSession } = await readStorage(['rpaRecordingSession']);
 
   try {
     if (rpaRecordingSession && rpaRecordingSession.active) {
-      // Só a sessão de GRAVAÇÃO é retomada aqui; antes a mensagem era enviada
-      // mesmo quando apenas uma execução estava ativa, criando um HUD fantasma.
+      // Só a GRAVAÇÃO é retomada aqui.
       await sendToTab(tabId, { type: 'RPA_RESUME_RECORDING', session: rpaRecordingSession }, true);
-      return;
     }
 
-    if (rpaExecutionSession && rpaExecutionSession.active) {
-      const { rpaTasks = [] } = await readStorage('rpaTasks');
-      const tasks = Array.isArray(rpaTasks) ? rpaTasks : [];
-      const task = tasks.find((item) => item.id === rpaExecutionSession.taskId);
-      if (task) {
-        await sendToTab(
-          tabId,
-          {
-            type: 'RPA_EXECUTE_TASK',
-            task: task,
-            config: rpaExecutionSession.config || {},
-            startStepIdx: rpaExecutionSession.nextStepIdx || 0,
-          },
-          true
-        );
-      }
-    }
+    // A retomada de EXECUÇÃO é responsabilidade exclusiva do content script
+    // (que consome a marcação "resumable" e sabe o passo exato). Reenviar o
+    // comando por aqui duplicava o início e fazia o fluxo começar do meio.
   } catch (err) {
-    console.warn('[AutoApprove] Falha ao retomar sessão na aba:', err);
+    console.warn('[AutoApprove] Falha ao retomar gravação na aba:', err);
   }
 });
 

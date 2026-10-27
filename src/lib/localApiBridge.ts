@@ -218,24 +218,17 @@ function handleLocalRequest(pathname: string, method: string, init?: RequestInit
   return json({ error: `Rota não suportada no modo local: ${pathname}` }, 404);
 }
 
-async function serverIsAvailable(): Promise<boolean> {
+/**
+ * O servidor Express marca a origem com o cookie `rpa_api`. Hospedagem
+ * estática (Vercel) não tem esse cookie — e é essa a única diferença que o
+ * cliente precisa detectar. Sem sondar `/api/state`, não há 404 no console.
+ */
+function serverMarkerPresent(): boolean {
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 2500);
-
-    const response = await fetch('/api/state', {
-      signal: controller.signal,
-      headers: { Accept: 'application/json' },
-    });
-    clearTimeout(timer);
-
-    if (!response.ok) return false;
-
-    const contentType = response.headers.get('Content-Type') || '';
-    if (!contentType.includes('application/json')) return false;
-
-    await response.json();
-    return true;
+    if (typeof document === 'undefined') return false;
+    return document.cookie
+      .split(';')
+      .some((entry) => entry.trim().startsWith('rpa_api='));
   } catch {
     return false;
   }
@@ -248,7 +241,7 @@ async function serverIsAvailable(): Promise<boolean> {
 export async function installLocalApiBridge(): Promise<boolean> {
   if (typeof window === 'undefined') return false;
 
-  if (await serverIsAvailable()) {
+  if (serverMarkerPresent()) {
     localMode = false;
     return false;
   }

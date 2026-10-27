@@ -389,6 +389,16 @@ async function runWorkerLoop(): Promise<void> {
 async function startServer(): Promise<void> {
   const app = express();
   app.use(express.json({ limit: '2mb' }));
+
+  // Marca a origem como "com servidor". O cliente lê este cookie para decidir
+  // entre a API real e o motor local, sem precisar sondar /api/state.
+  app.use((req: Request, res: Response, next) => {
+    if (req.method === 'GET') {
+      res.cookie('rpa_api', '1', { sameSite: 'lax', httpOnly: false, path: '/' });
+    }
+    next();
+  });
+
   app.use(express.static(path.join(__dirname, 'public')));
 
   app.get('/api/state', (_req: Request, res: Response) => {

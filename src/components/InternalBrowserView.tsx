@@ -125,6 +125,9 @@ export function InternalBrowserView({
 
   // Smooth, flicker-free screenshot updater (preloads in memory before swapping src)
   const refreshScreenSmooth = useCallback(() => {
+    // Sem servidor não existe endpoint de captura: evita 404 a cada ciclo.
+    if (isLocalMode()) return;
+
     const nextUrl = `/api/browser/screenshot?t=${Date.now()}`;
     setIsPreloading(true);
     const preloader = new Image();

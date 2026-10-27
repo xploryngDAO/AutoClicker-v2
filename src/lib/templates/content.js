@@ -61,6 +61,8 @@
   var openStepMenuId = null;
   var recordingTaskId = null;
   var lastTriggerSelector = null;
+  var lastRecordedAt = 0;
+  var executionNavigating = false;
   var wizardListConfig = {
     listRowSelector: '',
     openDetailSelector: '',
@@ -1338,7 +1340,22 @@
 
   function addRecordedStep(step) {
     if (!step) return;
+
+    // Um único clique pode chegar duas vezes (label + input associado, ou o
+    // próprio site redisparando o evento). Sem isso, o fluxo ganhava passos
+    // duplicados que atrapalhavam a execução.
+    var last = recordedSteps[recordedSteps.length - 1];
+    var isDuplicate =
+      last &&
+      last.cssSelector &&
+      last.cssSelector === step.cssSelector &&
+      last.action === step.action &&
+      Date.now() - lastRecordedAt < 600;
+
+    if (isDuplicate) return;
+
     recordedSteps.push(step);
+    lastRecordedAt = Date.now();
     if (recordedSteps.length > MAX_RECORDED_STEPS) {
       recordedSteps = recordedSteps.slice(-MAX_RECORDED_STEPS);
     }
@@ -1871,6 +1888,17 @@
       var target = normalizeTargetForRecording(rawTarget);
       if (!target) return;
 
+      // Clicar no <label> dispara também um clique no campo associado. Resolver
+      // para o controle faz os dois eventos caírem no mesmo seletor — e a
+      // deduplicação de addRecordedStep descarta o repetido.
+      if (target.tagName === 'LABEL') {
+        var associated = target.control;
+        if (!associated && target.getAttribute('for')) {
+          associated = document.getElementById(target.getAttribute('for'));
+        }
+        if (associated) target = associated;
+      }
+
       var selector = getResilientSelector(target);
       var ariaSelector = getAriaSelector(target);
       var xpath = getXPath(target);
@@ -2105,6 +2133,7 @@
     if (step.action === 'navigate' && step.value) {
       var targetUrl = String(step.value);
       if (window.location.href !== targetUrl) {
+        executionNavigating = true;
         sendLog('info', 'Navegando para ' + targetUrl + '...');
         window.location.href = targetUrl;
         return;
@@ -2175,6 +2204,13 @@
     var repeatCount = task.repeatMode === 'repeat_n' ? Math.max(1, Number(task.repeatCount) || 1) : 1;
     var firstCycle = Math.max(1, Number(currentCycle) || 1);
     var startIndex = Math.max(0, Number(startFromStepIdx) || 0);
+    executionNavigating = false;
+
+    // Início explícito do usuário começa sempre do passo 1: descartar qualquer
+    // sessão anterior é o que impedia o fluxo longo de "começar do meio".
+    if (startIndex === 0) {
+      safeStoreSet({ rpaExecutionSession: { active: false } });
+    }
 
     sendLog(
       'info',
@@ -2194,9 +2230,18 @@
 
           var step = steps[index];
 
+          // A sessão só é retomável quando a própria automação vai trocar de
+          // página. Em qualquer outro caso ela é marcada como não retomável,
+          // para que uma execução antiga nunca reinicie o fluxo no meio.
+          var willNavigate =
+            step.action === 'navigate' &&
+            Boolean(step.value) &&
+            window.location.href !== String(step.value);
+
           safeStoreSet({
             rpaExecutionSession: {
               active: true,
+              resumable: willNavigate,
               taskId: task.id,
               cycle: cycle,
               repeatCount: repeatCount,
@@ -2215,12 +2260,30 @@
           await sleep(Math.max(80, Number(step.waitBeforeMs) || 250) + jitter(settings));
 
           try {
-            await runSingleStep(step, { settings: settings, task: task });
+            // Uma repetição antes de desistir: elementos que aparecem com
+            // atraso deixavam o passo "perdido" e comprometiam o restante.
+            var lastStepError = null;
+            for (var attempt = 1; attempt <= 2; attempt += 1) {
+              try {
+                await runSingleStep(step, { settings: settings, task: task });
+                lastStepError = null;
+                break;
+              } catch (stepError) {
+                lastStepError = stepError;
+                if (attempt === 1) {
+                  sendLog('warn', 'Passo ' + (index + 1) + ' não concluiu; repetindo uma vez...');
+                  await sleep(500);
+                }
+              }
+            }
+
+            if (lastStepError) throw lastStepError;
+
             sendLog('success', 'Passo ' + (index + 1) + '/' + steps.length + ': ' + step.label);
             await waitForActionSettled(settings.baseDelayMs);
           } catch (stepError) {
             var message = stepError && stepError.message ? stepError.message : String(stepError);
-            sendLog('warn', 'Passo ' + (index + 1) + ' (' + step.label + '): ' + message);
+            sendLog('error', 'Passo ' + (index + 1) + ' (' + step.label + ') falhou: ' + message);
             await sleep(800);
           }
         }
@@ -2244,6 +2307,14 @@
       isExecuting = false;
       isPaused = false;
       closeExecutionHUD();
+
+      // Só preserva a sessão quando a página saiu do ar por uma navegação
+      // planejada; em qualquer outro encerramento ela é descartada.
+      if (!executionNavigating) {
+        safeStoreSet({ rpaExecutionSession: { active: false } });
+      }
+      executionNavigating = false;
+
       safeMessage({ type: 'UPDATE_STATS', patch: { status: 'idle' } });
     }
   }
@@ -2420,22 +2491,33 @@
         sendLog('info', 'Sessão de gravação restaurada em ' + window.location.pathname);
       }
 
-      if (execution.active) {
+      // Só retoma execução interrompida por uma navegação planejada. Sessões
+      // antigas (de execuções já encerradas) são descartadas aqui — era isso
+      // que fazia um fluxo longo recomeçar do meio, pulando os primeiros passos.
+      if (execution.active && execution.resumable === true) {
         var taskId = execution.taskId;
         var activeTask = tasks.filter(function (item) {
           return item.id === taskId;
         })[0];
 
+        // Consome o marcador antes de rodar: duas injeções não podem disparar
+        // o mesmo fluxo em paralelo.
+        safeStoreSet({ rpaExecutionSession: { active: false } });
+
         if (activeTask && Number(execution.nextStepIdx) < (activeTask.steps || []).length) {
           sendLog(
             'info',
-            'Retomando "' + activeTask.name + '" no passo ' + (Number(execution.nextStepIdx) + 1) + ' após navegação...'
+            'Retomando "' +
+              activeTask.name +
+              '" no passo ' +
+              (Number(execution.nextStepIdx) + 1) +
+              ' após navegação...'
           );
           await waitForActionSettled(800);
           executeFreeMacroTask(activeTask, execution.config, execution.nextStepIdx, execution.cycle || 1);
-        } else {
-          safeStoreSet({ rpaExecutionSession: { active: false } });
         }
+      } else if (execution.active) {
+        safeStoreSet({ rpaExecutionSession: { active: false } });
       }
     } catch (error) {
       console.warn('[AutoApprove] Falha ao restaurar estado:', error);
@@ -2456,14 +2538,27 @@
       var task = message.task;
       var config = message.config || {};
       var pattern = task && task.pattern;
+      var listConfig = (task && task.listConfig) || {};
+      var steps = task && Array.isArray(task.steps) ? task.steps : [];
 
-      if (pattern === 'list_detail_pagination' || pattern === 'list_batch') {
+      // A decisão é pelo CONTEÚDO, não pelo rótulo da tarefa: um fluxo linear
+      // com passos gravados precisa rodar todos eles, na ordem, mesmo que a
+      // tarefa tenha sido criada como "tabela com paginação".
+      var hasLoopSteps = steps.some(function (item) {
+        return item && item.isLoopTarget;
+      });
+      var isBatchFlow =
+        (pattern === 'list_detail_pagination' || pattern === 'list_batch') &&
+        Boolean(listConfig.listRowSelector) &&
+        hasLoopSteps;
+
+      if (isBatchFlow) {
         executeBatchTableWorkflow(task, config);
       } else {
         executeFreeMacroTask(task, config, message.startStepIdx, 1);
       }
 
-      sendResponse({ ok: true, executing: true });
+      sendResponse({ ok: true, executing: true, mode: isBatchFlow ? 'batch' : 'linear' });
       return true;
     }
 

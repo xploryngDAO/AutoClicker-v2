@@ -26,7 +26,7 @@ interface ContentListener {
   (message: Record<string, unknown>, sender: unknown, sendResponse: (reply?: unknown) => void): unknown;
 }
 
-function createHarness(bodyHtml: string): Harness {
+function createHarness(bodyHtml: string, seededStorage: Record<string, unknown> = {}): Harness {
   const dom = new JSDOM(`<!doctype html><html><body>${bodyHtml}</body></html>`, {
     runScripts: 'outside-only',
     pretendToBeVisual: true,
@@ -50,7 +50,7 @@ function createHarness(bodyHtml: string): Harness {
     } as DOMRect;
   };
 
-  const storage: Record<string, unknown> = {};
+  const storage: Record<string, unknown> = { ...seededStorage };
   const listeners: ContentListener[] = [];
 
   (window as unknown as { chrome: unknown }).chrome = {
@@ -302,4 +302,78 @@ test('clique comum dispara exatamente um evento de clique', async () => {
 
   assert.equal(clicks, 1, `Esperado 1 clique, recebidos ${clicks}`);
   assert.equal(mouseDowns, 1, `Esperado 1 mousedown, recebidos ${mouseDowns}`);
+});
+
+test('fluxo longo executa todos os passos desde o primeiro, mesmo com sessão antiga', async () => {
+  const TOTAL = 12;
+  const buttons = Array.from(
+    { length: TOTAL },
+    (_, index) => `<button id="b${index + 1}" type="button">Botão ${index + 1}</button>`
+  ).join('');
+
+  const steps = Array.from({ length: TOTAL }, (_, index) => ({
+    id: `s${index + 1}`,
+    order: index + 1,
+    label: `Clicar em Botão ${index + 1}`,
+    action: 'click',
+    cssSelector: `#b${index + 1}`,
+    waitBeforeMs: 0,
+    timeoutMs: 3000,
+    isLoopTarget: false,
+  }));
+
+  const task = {
+    id: 'task-long',
+    name: 'Fluxo longo',
+    pattern: 'free_macro',
+    repeatMode: 'once',
+    steps,
+  };
+
+  // Sessão antiga de uma execução anterior: era isso que fazia o fluxo
+  // recomeçar no passo 6 e "esquecer" os cinco primeiros.
+  const harness = createHarness(buttons, {
+    rpaExecutionSession: {
+      active: true,
+      taskId: 'task-long',
+      nextStepIdx: 5,
+      cycle: 1,
+      config: {},
+    },
+    rpaTasks: [task],
+  });
+
+  const clicked: string[] = [];
+  for (let index = 1; index <= TOTAL; index += 1) {
+    const button = harness.document.getElementById(`b${index}`) as HTMLButtonElement;
+    button.addEventListener('click', () => clicked.push(`b${index}`));
+  }
+
+  harness.send({ type: 'RPA_EXECUTE_TASK', task, config: { baseDelayMs: 0, randomJitterMs: 0 } });
+
+  const expected = Array.from({ length: TOTAL }, (_, index) => `b${index + 1}`);
+  await waitUntil(() => clicked.length >= TOTAL, 30000);
+
+  assert.deepEqual(clicked, expected, 'Todos os passos devem rodar uma vez, na ordem, desde o primeiro');
+});
+
+test('clique repetido no mesmo elemento não gera dois passos gravados', () => {
+  const harness = createHarness('<button id="dup" type="button">Duplicado</button>');
+  harness.send({ type: 'RPA_START_RECORDING', mode: 'free', taskId: 'task-1' });
+
+  const button = harness.document.getElementById('dup') as HTMLButtonElement;
+  button.dispatchEvent(new harness.window.MouseEvent('click', { bubbles: true, clientX: 10, clientY: 10 }));
+  button.dispatchEvent(new harness.window.MouseEvent('click', { bubbles: true, clientX: 10, clientY: 10 }));
+
+  const hud = harness.document.getElementById('autoapprove-hud');
+  assert.ok(hud, 'HUD ausente');
+
+  const recorded = harness.storage.rpaRecordingSession as
+    | { recordedSteps?: Array<{ cssSelector?: string }> }
+    | undefined;
+  const steps = recorded?.recordedSteps || [];
+
+  assert.equal(steps.length, 1, `Esperado 1 passo gravado, obtidos ${steps.length}`);
+  assert.match(hud.innerHTML, /#1/);
+  assert.doesNotMatch(hud.innerHTML, /#2/);
 });
