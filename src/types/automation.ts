@@ -27,7 +27,7 @@ export interface AccessRequestItem {
   stepTraces: AccessStepTrace[];
 }
 
-export type StepActionType = 'click' | 'check' | 'select' | 'wait_visible' | 'fill';
+export type StepActionType = 'click' | 'check' | 'select' | 'wait_visible' | 'fill' | 'sleep' | 'navigate';
 
 export interface WorkflowStep {
   id: string;

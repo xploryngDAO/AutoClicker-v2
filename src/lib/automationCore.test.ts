@@ -9,15 +9,15 @@ import {
   getDefaultProxies,
   getDefaultWorkflowSteps,
   synthesizeRecordedStep,
-} from './seedData';
+} from './seedData.ts';
 import {
   buildChromeExtensionZipEntries,
   generateChromeExtensionTextFiles,
   generatePlaywrightScript,
   generateSeleniumScript,
   serializeAuditCsv,
-} from './codeGenerators';
-import { createExtensionIconPng, createZipArchive } from './zipBuilder';
+} from './codeGenerators.ts';
+import { createExtensionIconPng, createZipArchive } from './zipBuilder.ts';
 
 test('generateInitialQueue creates 418 deterministic pending access requests', () => {
   const queue = generateInitialQueue();

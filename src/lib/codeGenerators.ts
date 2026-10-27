@@ -55,6 +55,11 @@ export function generatePlaywrightScript(
         actionCode = `await page.locator('${sel}').first.fill("${val}", timeout=${s.timeoutMs})`;
       } else if (s.action === 'wait_visible') {
         actionCode = `await page.locator('${sel}').first.wait_for(state="visible", timeout=${s.timeoutMs})`;
+      } else if (s.action === 'sleep') {
+        const seconds = (Number(s.value) || 2000) / 1000;
+        actionCode = `await asyncio.sleep(${seconds})`;
+      } else if (s.action === 'navigate') {
+        actionCode = `await page.goto("${escapePyString(s.value || config.targetPortalUrl)}", wait_until="domcontentloaded")`;
       }
 
       return `        # Passo ${s.order}: ${label}
@@ -345,6 +350,10 @@ export function generateSeleniumScript(
         op = `elem = WebDriverWait(driver, ${timeoutSec}).until(EC.visibility_of_element_located((By.CSS_SELECTOR, '${sel}')))\n            elem.clear()\n            elem.send_keys("${val}")`;
       } else if (s.action === 'wait_visible') {
         op = `WebDriverWait(driver, ${timeoutSec}).until(EC.visibility_of_element_located((By.CSS_SELECTOR, '${sel}')))`;
+      } else if (s.action === 'sleep') {
+        op = `time.sleep(${(Number(s.value) || 2000) / 1000})`;
+      } else if (s.action === 'navigate') {
+        op = `driver.get("${escapePyString(s.value || config.targetPortalUrl)}")`;
       }
 
       return `            # Passo ${s.order}: ${label}

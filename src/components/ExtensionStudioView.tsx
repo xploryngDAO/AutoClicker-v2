@@ -305,7 +305,7 @@ export function ExtensionStudioView({ config, steps }: ExtensionStudioViewProps)
             className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-xs transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >
             <Download className="w-4 h-4" />
-            <span>{downloadSuccess ? 'Baixando Arquivo (.zip)...' : 'Baixar Extensão (.zip - 217 KB)'}</span>
+            <span>{downloadSuccess ? 'Baixando Arquivo (.zip)...' : 'Baixar Extensão (.zip)'}</span>
           </button>
 
           <a

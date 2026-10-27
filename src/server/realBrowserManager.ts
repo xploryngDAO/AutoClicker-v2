@@ -490,22 +490,56 @@ export class RealBrowserManager {
 
   public async executeWorkflowStep(step: WorkflowStep): Promise<{ ok: boolean; message: string }> {
     const page = await this.ensurePage();
-    this.log('Executar Passo', `${step.order}. ${step.label} (${step.cssSelector})`);
+    this.log('Executar Passo', `${step.order}. ${step.label} (${step.cssSelector || step.action})`);
 
     try {
+      // Passos que não dependem de elemento: espera programada e navegação.
+      if (step.action === 'sleep') {
+        const ms = Number(step.value) || 2000;
+        await new Promise((resolve) => setTimeout(resolve, ms));
+        this.log('Espera Programada', `${(ms / 1000).toFixed(1)}s`);
+        await this.captureScreenshot();
+        return { ok: true, message: `Aguardou ${(ms / 1000).toFixed(1)}s conforme programado.` };
+      }
+
+      if (step.action === 'navigate') {
+        const target = step.value || this.currentUrl;
+        if (!/^https?:\/\//i.test(target) && !target.startsWith('about:')) {
+          throw new Error(`URL inválida para navegação: ${target}`);
+        }
+        await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        this.currentUrl = page.url();
+        this.currentTitle = await page.title().catch(() => this.currentTitle);
+        await this.captureScreenshot();
+        return { ok: true, message: `Navegou para ${this.currentUrl}` };
+      }
+
+      if (!step.cssSelector) {
+        throw new Error('Passo sem seletor CSS.');
+      }
+
+      const timeout = Math.max(1500, Number(step.timeoutMs) || 8000);
       const locator = page.locator(step.cssSelector).first();
-      await locator.waitFor({ state: 'visible', timeout: 5000 });
+      await locator.waitFor({ state: 'visible', timeout });
 
       if (step.action === 'click') {
-        await locator.click();
+        await locator.click({ timeout });
       } else if (step.action === 'check') {
-        await locator.check();
+        if (!(await locator.isChecked().catch(() => false))) {
+          await locator.check({ timeout });
+        }
       } else if (step.action === 'select') {
-        await locator.selectOption(step.value || '90d');
+        const wanted = step.value || '';
+        try {
+          await locator.selectOption(wanted, { timeout });
+        } catch {
+          // Fallback: alguns selects usam rótulo em vez de value
+          await locator.selectOption({ label: wanted }, { timeout });
+        }
       } else if (step.action === 'fill') {
-        await locator.fill(step.value || '');
+        await locator.fill(step.value || '', { timeout });
       } else if (step.action === 'wait_visible') {
-        // already waited
+        // já aguardado acima
       }
 
       await new Promise((r) => setTimeout(r, 300));

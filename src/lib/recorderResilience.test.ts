@@ -5,10 +5,10 @@ import {
   generateBackgroundJs,
   generateContentJs,
   generateSidepanelHtml,
-} from './extensionTemplates';
-import { buildChromeExtensionZipEntries } from './codeGenerators';
-import { getDefaultConfig, getDefaultTasks, getDefaultWorkflowSteps } from './seedData';
-import { createZipArchive } from './zipBuilder';
+} from './extensionTemplates.ts';
+import { buildChromeExtensionZipEntries } from './codeGenerators.ts';
+import { getDefaultConfig, getDefaultTasks, getDefaultWorkflowSteps } from './seedData.ts';
+import { createZipArchive } from './zipBuilder.ts';
 
 test('manifest.json includes webNavigation and essential MV3 permissions', () => {
   const manifestStr = generateExtensionManifest();
@@ -92,7 +92,7 @@ test('content.js implements universal dropdown, combobox and custom element exec
 
   // 1. PointerEvent and Coordinate Precision
   assert.ok(contentJs.includes('PointerEvent'), 'Missing PointerEvent support in performClick');
-  assert.ok(contentJs.includes('pointerType: \'mouse\''), 'Missing pointerType: mouse specification');
+  assert.ok(contentJs.includes("pointerType: 'mouse'"), 'Missing pointerType: mouse specification');
   assert.ok(contentJs.includes('clientX') && contentJs.includes('clientY'), 'Missing clientX/clientY coordinate calculation');
 
   // 2. Target Normalization (resolves inner icon/span vs outer trigger)
@@ -113,3 +113,32 @@ test('content.js implements universal dropdown, combobox and custom element exec
   assert.ok(contentJs.includes('HTMLInputElement.prototype'), 'Missing React native input tracker value setter');
 });
 
+test('dropdown activation happens once, without the double click that closed the menu', () => {
+  const contentJs = generateContentJs();
+
+  // A ativação passa por um único caminho (clickOnce) — nunca dispara
+  // dispatchEvent('click') e element.click() para o mesmo elemento.
+  assert.ok(contentJs.includes('function clickOnce'), 'Missing single-activation helper');
+  assert.equal(
+    (contentJs.match(/\.click\(\)/g) || []).length,
+    1,
+    'Deve existir um único ponto de clique nativo no content script'
+  );
+
+  // O menu é aberto por verificação de estado, com reabertura pelo gatilho.
+  assert.ok(contentJs.includes('ensureDropdownOpen'), 'Missing ensureDropdownOpen');
+  assert.ok(contentJs.includes('isDropdownExpanded'), 'Missing dropdown state verification');
+  assert.ok(contentJs.includes('findOpenMenu'), 'Missing open menu discovery');
+  assert.ok(contentJs.includes('chooseOptionStep'), 'Missing option selection step');
+  assert.ok(contentJs.includes('parentTriggerSelector'), 'Missing recorded trigger reference for options');
+});
+
+test('content.js exposes per-step action menu with +2s wait insertion', () => {
+  const contentJs = generateContentJs();
+
+  assert.ok(contentJs.includes('data-hud-act="delay-2"'), 'Missing +2s button in recording HUD');
+  assert.ok(contentJs.includes('makeDelayStep'), 'Missing delay step factory');
+  assert.ok(contentJs.includes('insertStepAfter'), 'Missing step insertion helper');
+  assert.ok(contentJs.includes("action === 'sleep'"), 'Missing sleep step handling during execution');
+  assert.ok(contentJs.includes('aahud-step-menu'), 'Missing per-step action menu markup');
+});

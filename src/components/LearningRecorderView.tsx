@@ -141,6 +141,45 @@ export function LearningRecorderView({
     );
   };
 
+  // Insere uma espera programada logo depois do passo escolhido.
+  const handleInsertWait = (id: string, seconds: number) => {
+    setDraftSteps((prev) => {
+      const index = prev.findIndex((s) => s.id === id);
+      if (index < 0) return prev;
+
+      const anchor = prev[index];
+      const safeSeconds = Math.max(0.1, seconds);
+      const waitMs = Math.round(safeSeconds * 1000);
+
+      const waitStep: WorkflowStep = {
+        id: `wait-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+        order: index + 2,
+        label: `Aguardar ${safeSeconds}s`,
+        action: 'sleep',
+        cssSelector: '',
+        ariaSelector: '',
+        value: String(waitMs),
+        waitBeforeMs: 0,
+        timeoutMs: waitMs + 1000,
+        isLoopTarget: Boolean(anchor.isLoopTarget),
+      };
+
+      const next = [...prev];
+      next.splice(index + 1, 0, waitStep);
+      return next.map((s, idx) => ({ ...s, order: idx + 1 }));
+    });
+  };
+
+  // Ajusta a espera ANTES do passo, em segundos.
+  const handleWaitBeforeChange = (id: string, rawSeconds: string) => {
+    const seconds = Number(rawSeconds.replace(',', '.'));
+    if (!Number.isFinite(seconds) || seconds < 0) return;
+
+    setDraftSteps((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, waitBeforeMs: Math.round(seconds * 1000) } : s))
+    );
+  };
+
   const handleAddCustomStep = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newStepLabel.trim() || !newStepSelector.trim()) {
@@ -640,13 +679,36 @@ export function LearningRecorderView({
 
                   <div className="flex items-center gap-2">
                     <span className="text-[11px] font-mono text-slate-500 shrink-0">
-                      {step.action} · {step.waitBeforeMs}ms
+                      {step.action}
                     </span>
+                    <label className="flex items-center gap-1 shrink-0 text-[10px] text-slate-500">
+                      espera
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.5}
+                        value={Number((step.waitBeforeMs / 1000).toFixed(2))}
+                        onChange={(e) => handleWaitBeforeChange(step.id, e.target.value)}
+                        aria-label={`Espera antes do passo ${step.order}, em segundos`}
+                        className="w-16 px-1.5 py-1 text-[11px] bg-slate-50 border border-slate-200 rounded text-slate-800 focus:outline-none focus:border-blue-600"
+                      />
+                      s
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => handleInsertWait(step.id, 2)}
+                      aria-label={`Adicionar 2 segundos de espera depois do passo ${step.order}`}
+                      title="Adicionar 2 segundos de espera depois deste passo"
+                      className="shrink-0 px-2 py-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 cursor-pointer"
+                    >
+                      +2s
+                    </button>
                     <input
                       type="text"
                       value={step.cssSelector}
                       onChange={(e) => handleSelectorEdit(step.id, e.target.value)}
                       aria-label={`Seletor CSS do passo ${step.order}`}
+                      placeholder="Sem seletor (passo de espera)"
                       className="flex-1 px-2.5 py-1 text-[11px] font-mono bg-slate-50 border border-slate-200 rounded text-slate-800 focus:outline-none focus:border-blue-600"
                     />
                   </div>

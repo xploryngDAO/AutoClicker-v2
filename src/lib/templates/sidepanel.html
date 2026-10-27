@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AutoApprove RPA</title>
+  <link rel="stylesheet" href="sidepanel.css" />
+</head>
+<body>
+  <header class="hdr">
+    <div class="brand-row">
+      <div class="logo">⚡</div>
+      <div class="brand-text">
+        <h1>AutoApprove RPA</h1>
+        <p>Motor universal de automação &amp; macros</p>
+      </div>
+      <span class="auth-pill" title="Automação roda na sua própria aba autenticada">Sessão ativa</span>
+    </div>
+  </header>
+
+  <div id="live-recording-banner" class="recording-live-banner" style="display: none;">
+    <div class="banner-top">
+      <span class="pulse-rec-dot"></span>
+      <div>
+        <strong id="rec-banner-title">Gravação ativa na tela</strong>
+        <p id="rec-banner-sub">0 passos capturados</p>
+      </div>
+    </div>
+    <div class="banner-actions">
+      <button id="btn-banner-save" class="btn btn-primary btn-small" type="button">💾 Salvar gravação</button>
+      <button id="btn-banner-cancel" class="btn btn-secondary btn-small" type="button">✕ Cancelar</button>
+    </div>
+  </div>
+
+  <section class="task-selector-box">
+    <label for="select-active-task" class="box-label">Automação selecionada</label>
+    <div class="task-select-row">
+      <select id="select-active-task" class="custom-select"></select>
+      <button id="btn-new-task" class="btn btn-secondary btn-icon" type="button" title="Criar nova automação">+ Nova</button>
+    </div>
+    <div class="task-meta-row">
+      <span id="task-badge-category" class="task-badge">Universal</span>
+      <span id="task-badge-pattern" class="task-badge badge-blue">Macro livre</span>
+      <span id="task-steps-count" class="task-badge badge-gray">0 passos</span>
+    </div>
+  </section>
+
+  <section class="stats-grid">
+    <div class="stat-card">
+      <span class="lbl">Execuções</span>
+      <strong id="st-approved" class="text-emerald">0</strong>
+      <small id="st-approved-sub">concluídas</small>
+    </div>
+    <div class="stat-card">
+      <span class="lbl">Ciclo / página</span>
+      <strong id="st-page">1</strong>
+      <small id="st-page-info">em execução</small>
+    </div>
+    <div class="stat-card">
+      <span class="lbl">Status</span>
+      <strong id="st-status">Pronto</strong>
+      <small id="st-status-sub">aguardando início</small>
+    </div>
+  </section>
+
+  <nav class="tabs-nav">
+    <button class="tab-btn active" data-tab="tab-exec" type="button">▶️ Executar</button>
+    <button class="tab-btn" data-tab="tab-steps" type="button">📋 Passos</button>
+    <button class="tab-btn" data-tab="tab-record" type="button">🔴 Gravar</button>
+    <button class="tab-btn" data-tab="tab-logs" type="button">📜 Logs</button>
+  </nav>
+
+  <div id="tab-exec" class="tab-content active">
+    <div class="actions-card">
+      <button id="btn-start" class="btn btn-primary btn-large" type="button">▶️ EXECUTAR ESTA TAREFA</button>
+      <div class="button-row">
+        <button id="btn-pause" class="btn btn-secondary" type="button">⏸ Pausar</button>
+        <button id="btn-stop" class="btn btn-danger" type="button">⏹ Parar</button>
+      </div>
+      <div class="button-row">
+        <button id="btn-quick-record" class="btn btn-secondary" type="button">🔴 Gravar na tela</button>
+      </div>
+    </div>
+
+    <div class="config-card">
+      <span class="lbl">Modo de repetição</span>
+      <div class="repeat-controls">
+        <label class="radio-label">
+          <input type="radio" name="repeatMode" value="once" id="rep-once" />
+          <span>Executar 1x</span>
+        </label>
+        <label class="radio-label">
+          <input type="radio" name="repeatMode" value="repeat_n" id="rep-n" />
+          <span>Repetir</span>
+          <input type="number" id="input-repeat-count" min="1" max="1000" value="10" class="mini-input" />
+          <span>vezes</span>
+        </label>
+        <label class="radio-label">
+          <input type="radio" name="repeatMode" value="loop_list" id="rep-loop" />
+          <span>Loop de lista (tabela com subpáginas)</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="speed-box">
+      <span class="lbl">Espera &amp; velocidade (auto-wait)</span>
+      <div class="speed-buttons">
+        <button class="speed-btn active" data-speed="adaptive" type="button">⚡ Adaptativa</button>
+        <button class="speed-btn" data-speed="human" type="button">🐢 Humana</button>
+        <button class="speed-btn" data-speed="fast" type="button">🚀 Rápida</button>
+      </div>
+      <div class="speed-note">
+        ✔ <strong>Espera inteligente:</strong> o robô aguarda carregamento de página, spinners e modais antes de cada passo.
+      </div>
+    </div>
+
+    <div class="info-callout">
+      <strong>Sessão corporativa autenticada</strong>
+      <p>A automação roda dentro da sua própria aba já autenticada — sem risco de bloqueio por Acesso Condicional.</p>
+    </div>
+  </div>
+
+  <div id="tab-steps" class="tab-content">
+    <div class="steps-header">
+      <div>
+        <h3 id="steps-task-title">Passos gravados</h3>
+        <p class="subtext">Use <strong>+2s</strong> para inserir espera e <strong>⋮</strong> para editar, mover ou remover.</p>
+      </div>
+      <button id="btn-clear-steps" class="btn btn-secondary btn-small" type="button" title="Limpar passos">Limpar</button>
+    </div>
+
+    <div id="steps-empty-state" class="empty-box" style="display: none;">
+      <p>Nenhum passo gravado ainda para esta automação.</p>
+      <button id="btn-start-record-empty" class="btn btn-primary btn-small" type="button">🔴 Gravar primeiros passos</button>
+    </div>
+
+    <div id="steps-list-container" class="steps-timeline"></div>
+  </div>
+
+  <div id="tab-record" class="tab-content">
+    <div class="record-instructions-card">
+      <h3>Aprender por demonstração</h3>
+      <p>Ensine o robô a executar qualquer rotina web em três passos:</p>
+
+      <div class="resilience-feature-box">
+        <span class="shield-icon">🛡️</span>
+        <div>
+          <strong>Gravação Blindada Multi-Páginas</strong>
+          <p>Você pode clicar em botões que mudam de página, recarregam ou abrem novos links. O modal permanece na tela e a gravação continua sem se perder.</p>
+        </div>
+      </div>
+
+      <ol class="instructions-list">
+        <li><strong>1. Abra a página desejada</strong><span>Acesse o portal nesta aba (SAP, Totvs, Jira, ServiceNow...).</span></li>
+        <li><strong>2. Acione o gravador</strong><span>A barra flutuante aparece na tela e pode ser arrastada.</span></li>
+        <li><strong>3. Interaja normalmente</strong><span>Cada clique, digitação e seleção é capturado; ao final, clique em Salvar.</span></li>
+      </ol>
+
+      <div class="record-buttons-stack">
+        <button id="btn-launch-free-record" class="btn btn-primary btn-large" type="button">🪄 Iniciar gravação livre</button>
+        <button id="btn-launch-wizard-record" class="btn btn-secondary" type="button">📋 Assistente de tabela (4 fases)</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="tab-logs" class="tab-content">
+    <div class="logs-header">
+      <h3>Histórico de eventos</h3>
+      <button id="btn-export-csv" class="btn btn-secondary btn-small" type="button">Baixar CSV</button>
+    </div>
+    <div id="log-list" class="log-container"></div>
+  </div>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>
