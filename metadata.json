@@ -1,0 +1,8 @@
+{
+  "name": "AutoApprove AI",
+  "description": "Automate repetitive portal tasks and OAuth approvals with intelligent scripts, real-time logging, and browser-based execution.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

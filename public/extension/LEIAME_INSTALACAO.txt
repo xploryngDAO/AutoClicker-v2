@@ -1,0 +1,20 @@
+AUTOAPPROVE RPA — EXTENSÃO PARA GOOGLE CHROME E MICROSOFT EDGE
+========================================================================
+
+COMO INSTALAR NO SEU NAVEGADOR:
+1. Descompacte todo o conteúdo deste arquivo ZIP em uma pasta no seu computador
+   (ex.: C:\AutoApproveExtensao ou na sua área de trabalho).
+2. Abra o Google Chrome ou Microsoft Edge e acesse a página de extensões:
+   - No Chrome: digite chrome://extensions na barra de endereços e aperte Enter
+   - No Edge:   digite edge://extensions na barra de endereços e aperte Enter
+3. Ative a chave "Modo do desenvolvedor" (Developer mode) no canto superior direito.
+4. Clique no botão "Carregar sem compactação" (Load unpacked).
+5. Selecione a pasta onde você descompactou os arquivos.
+6. Pronto! A extensão AutoApprove estará instalada e pronta.
+
+COMO USAR PARA APROVAR OS 400+ ACESSOS:
+1. Abra a página do portal corporativo com sua conta já logada via Microsoft OAuth / Authenticator.
+2. Clique no ícone do AutoApprove na barra do navegador (abra o painel lateral).
+3. Clique em "Gravar 1ª Rodada na Aba" e aprove manualmente a 1ª solicitação na tela.
+4. Clique em "Finalizar Gravação" e em seguida em "Iniciar Aprovações".
+5. O robô executará as mais de 400 solicitações na aba em segundo plano!
