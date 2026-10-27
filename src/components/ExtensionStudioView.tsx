@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import type { AutomationConfig, AutomationTask, WorkflowStep } from '../types/automation';
 import { getDefaultTasks } from '../lib/seedData';
+import { downloadExport } from '../lib/downloads';
 import {
   buildChromeExtensionZipEntries,
   generateChromeExtensionTextFiles,
@@ -112,7 +113,8 @@ export function ExtensionStudioView({ config, steps }: ExtensionStudioViewProps)
       setDownloadSuccess(true);
       setTimeout(() => setDownloadSuccess(false), 4000);
     } catch {
-      window.location.href = '/api/export/chrome-extension';
+      // Fallback: gera pelo endpoint (ponte local ou servidor)
+      void downloadExport('chrome-extension');
     }
   };
 
@@ -308,14 +310,16 @@ export function ExtensionStudioView({ config, steps }: ExtensionStudioViewProps)
             <span>{downloadSuccess ? 'Baixando Arquivo (.zip)...' : 'Baixar Extensão (.zip)'}</span>
           </button>
 
-          <a
-            href="/api/export/chrome-extension"
-            download="autoapprove-extensao-chrome-mv3.zip"
-            className="inline-flex items-center gap-2 px-3.5 py-2.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl shadow-2xs transition-colors whitespace-nowrap shrink-0"
+          <button
+            type="button"
+            onClick={() => {
+              void downloadExport('chrome-extension');
+            }}
+            className="inline-flex items-center gap-2 px-3.5 py-2.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl shadow-2xs transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >
             <Download className="w-3.5 h-3.5 text-slate-500" />
-            <span>Link Direto</span>
-          </a>
+            <span>Gerar novamente</span>
+          </button>
         </div>
       </div>
 

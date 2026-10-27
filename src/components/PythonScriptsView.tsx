@@ -8,6 +8,7 @@ import {
   generatePythonRequirements,
   generateSeleniumScript,
 } from '../lib/codeGenerators';
+import { downloadExport } from '../lib/downloads';
 
 interface PythonScriptsViewProps {
   config: AutomationConfig;
@@ -62,14 +63,16 @@ export function PythonScriptsView({ config, steps, proxies }: PythonScriptsViewP
           </p>
         </div>
 
-        <a
-          href="/api/export/python-bundle"
-          download="autoapprove-python-playwright-selenium.zip"
+        <button
+          type="button"
+          onClick={() => {
+            void downloadExport('python-bundle');
+          }}
           className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors whitespace-nowrap shrink-0 shadow-xs cursor-pointer"
         >
           <Download className="w-4 h-4" />
           <span>Baixar Pacote Python (.zip)</span>
-        </a>
+        </button>
       </div>
 
       {/* Summary Parameter Strip */}

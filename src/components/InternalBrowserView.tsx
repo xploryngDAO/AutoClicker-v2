@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { BrowserServerRequired } from './BrowserServerRequired';
+import { isLocalMode } from '../lib/localApiBridge';
 import {
   ArrowLeft,
   ArrowRight,
@@ -426,6 +428,12 @@ export function InternalBrowserView({
       setSavingSteps(false);
     }
   };
+
+  // Sem servidor não existe Chromium para controlar: mostra o caminho alternativo
+  // em vez de tentar capturar uma tela que nunca vai existir.
+  if (isLocalMode()) {
+    return <BrowserServerRequired targetPortalUrl={targetPortalUrl} />;
+  }
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-[1520px] w-full mx-auto space-y-6">

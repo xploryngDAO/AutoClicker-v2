@@ -16,6 +16,8 @@ import { InternalBrowserView } from './components/InternalBrowserView';
 import { ExtensionStudioView } from './components/ExtensionStudioView';
 import { AdvancedSettingsView } from './components/AdvancedSettingsView';
 import { buildLocalSnapshot } from './lib/localSnapshot';
+import { isLocalMode } from './lib/localApiBridge';
+import { getLocalSnapshot, subscribeLocalEngine } from './lib/localEngine';
 
 function resolveInitialTab(): WorkspaceTab {
   if (typeof window === 'undefined') return 'browser';
@@ -53,6 +55,14 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    // Modo local (sem servidor): o estado vem do motor que roda no navegador.
+    if (isLocalMode()) {
+      const sync = () => setState(getLocalSnapshot());
+      sync();
+      setSseConnected(true);
+      return subscribeLocalEngine(sync);
+    }
+
     let es: EventSource | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 

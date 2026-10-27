@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { downloadExport } from '../lib/downloads';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -214,14 +215,16 @@ export function ExecutionDashboardView({
             <span>ABRIR NAVEGADOR INTERNO REAL ➔</span>
           </button>
 
-          <a
-            href="/autoapprove-extensao-chrome-mv3.zip"
-            download="autoapprove-extensao-chrome-mv3.zip"
-            className="w-full sm:w-auto px-4 py-3.5 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl border border-white/20 transition-all flex items-center justify-center gap-2"
+          <button
+            type="button"
+            onClick={() => {
+              void downloadExport('chrome-extension');
+            }}
+            className="w-full sm:w-auto px-4 py-3.5 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl border border-white/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
           >
             <Puzzle className="w-4 h-4 text-emerald-400" />
             <span>Baixar Extensão (.zip)</span>
-          </a>
+          </button>
         </div>
       </div>
 
@@ -291,14 +294,16 @@ export function ExecutionDashboardView({
             <span>Simular CAPTCHA</span>
           </button>
 
-          <a
-            href="/api/export/audit-csv"
-            download="relatorio-auditoria-acessos-iam.csv"
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
+          <button
+            type="button"
+            onClick={() => {
+              void downloadExport('audit-csv');
+            }}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Exportar CSV</span>
-          </a>
+          </button>
         </div>
       </div>
 
