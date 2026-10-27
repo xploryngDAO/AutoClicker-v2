@@ -15,6 +15,7 @@ import { ExecutionDashboardView } from './components/ExecutionDashboardView';
 import { InternalBrowserView } from './components/InternalBrowserView';
 import { ExtensionStudioView } from './components/ExtensionStudioView';
 import { AdvancedSettingsView } from './components/AdvancedSettingsView';
+import { buildLocalSnapshot } from './lib/localSnapshot';
 
 function resolveInitialTab(): WorkspaceTab {
   if (typeof window === 'undefined') return 'browser';
@@ -30,35 +31,47 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>(resolveInitialTab);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [state, setState] = useState<AutomationStateSnapshot | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [demoMode, setDemoMode] = useState(false);
   const [sseConnected, setSseConnected] = useState(false);
 
+  /**
+   * Busca o estado no servidor. Devolve `false` quando não há backend (deploy
+   * estático na Vercel, por exemplo) para que o app caia em modo local em vez
+   * de exibir uma tela de erro.
+   */
   const fetchFullState = useCallback(async () => {
     try {
       const resp = await fetch('/api/state');
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const snap = (await resp.json()) as AutomationStateSnapshot;
       setState(snap);
-      setLoadError(null);
-    } catch (err) {
-      setLoadError(
-        err instanceof Error ? err.message : 'Falha de conexão com o serviço de automação.'
-      );
+      setDemoMode(false);
+      return true;
+    } catch {
+      return false;
     }
   }, []);
 
   useEffect(() => {
-    void fetchFullState();
-
     let es: EventSource | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    // Sem servidor, opera com dados locais e nem tenta abrir o stream SSE.
+    const bootstrap = async () => {
+      const online = await fetchFullState();
+      if (!online) {
+        setDemoMode(true);
+        setState(buildLocalSnapshot());
+        return;
+      }
+      connectStream();
+    };
 
     const connectStream = () => {
       es = new EventSource('/api/events');
 
       es.onopen = () => {
         setSseConnected(true);
-        setLoadError(null);
       };
 
       es.addEventListener('sync', (ev: MessageEvent) => {
@@ -119,13 +132,14 @@ export default function App() {
         setSseConnected(false);
         es?.close();
         reconnectTimer = setTimeout(() => {
-          void fetchFullState();
-          connectStream();
+          void fetchFullState().then((online) => {
+            if (online) connectStream();
+          });
         }, 2000);
       };
     };
 
-    connectStream();
+    void bootstrap();
 
     return () => {
       es?.close();
@@ -134,6 +148,9 @@ export default function App() {
   }, [fetchFullState]);
 
   const postAction = async (endpoint: string, body?: unknown) => {
+    // Em modo local não existe API; evita dezenas de requisições 404 no console.
+    if (demoMode) return { ok: false, demo: true };
+
     const resp = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -158,28 +175,6 @@ export default function App() {
       void postAction('/api/run/reset', { count: 418 });
     }
   };
-
-  if (loadError && !state) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
-        <div className="bg-white border border-slate-200 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-sm">
-          <h1 className="text-lg font-bold text-slate-900">
-            Serviço de Automação Indisponível
-          </h1>
-          <p className="text-sm text-slate-600">
-            Não foi possível carregar o estado inicial da fila ({loadError}).
-          </p>
-          <button
-            type="button"
-            onClick={() => void fetchFullState()}
-            className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl cursor-pointer"
-          >
-            Tentar Novamente
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   if (!state) {
     return (
@@ -206,6 +201,7 @@ export default function App() {
       stepsCount={state.steps.length}
       activeProxiesCount={activeProxiesCount}
       sseConnected={sseConnected}
+      demoMode={demoMode}
       mobileMenuOpen={mobileMenuOpen}
       onToggleMobileMenu={setMobileMenuOpen}
       onPrimaryAction={handlePrimaryTopAction}

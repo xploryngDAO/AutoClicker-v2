@@ -25,6 +25,7 @@ interface WorkspaceChromeProps {
   stepsCount: number;
   activeProxiesCount: number;
   sseConnected: boolean;
+  demoMode?: boolean;
   mobileMenuOpen: boolean;
   onToggleMobileMenu: (open: boolean) => void;
   onPrimaryAction: () => void;
@@ -76,6 +77,7 @@ export function WorkspaceChrome({
   stepsCount,
   activeProxiesCount,
   sseConnected,
+  demoMode = false,
   onPrimaryAction,
   children,
 }: WorkspaceChromeProps) {
@@ -118,6 +120,17 @@ export function WorkspaceChrome({
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
       <MasterPromptModal isOpen={promptModalOpen} onClose={() => setPromptModalOpen(false)} />
+      {demoMode && (
+        <div className="bg-amber-50 border-b border-amber-300 text-amber-900">
+          <div className="px-4 sm:px-6 lg:px-8 max-w-[1440px] w-full mx-auto py-2 flex items-start sm:items-center gap-2 text-[11px] leading-snug">
+            <span className="font-bold shrink-0">Modo local</span>
+            <span>
+              Servidor de automação não conectado: a gravação, a execução em lote e o navegador
+              interno precisam dele. A geração da extensão (.zip) funciona normalmente.
+            </span>
+          </div>
+        </div>
+      )}
       {/* Header Fixo com Identidade, Status e Ação Rápida */}
       <header className="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-2xs">
         {/* Barra Superior */}
