@@ -15,6 +15,7 @@ import {
 import type { EngineStatus, QueueMetrics } from '../types/automation';
 import { MasterPromptModal } from './MasterPromptModal';
 import { downloadExport } from '../lib/downloads';
+import { isLocalMode } from '../lib/localApiBridge';
 
 export type WorkspaceTab = 'dashboard' | 'browser' | 'extension' | 'advanced';
 
@@ -117,6 +118,9 @@ export function WorkspaceChrome({
   const primaryCta = getPrimaryCtaLabel();
 
   const [promptModalOpen, setPromptModalOpen] = React.useState(false);
+
+  // No modo estático o motor roda no navegador: não existe Chromium de servidor.
+  const localOnly = demoMode || isLocalMode();
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
@@ -278,16 +282,16 @@ export function WorkspaceChrome({
             <div className="flex items-center gap-2">
               <span
                 className={
-                  demoMode
+                  localOnly
                     ? 'w-2 h-2 rounded-full bg-amber-400'
                     : 'w-2 h-2 rounded-full bg-emerald-400 animate-ping'
                 }
               />
-              <span className={demoMode ? 'text-amber-300 font-bold' : 'text-emerald-300 font-bold'}>
-                {demoMode ? 'Modo local no navegador:' : 'Chromium Real Ativo no Servidor:'}
+              <span className={localOnly ? 'text-amber-300 font-bold' : 'text-emerald-300 font-bold'}>
+                {localOnly ? 'Modo local no navegador:' : 'Chromium Real Ativo no Servidor:'}
               </span>
               <span className="text-slate-300">
-                {demoMode
+                {localOnly
                   ? 'o motor roda nesta aba. O Chromium interno exige o servidor local; use a extensão para gravar no portal.'
                   : 'Acesse a aba Navegador Interno Real para autenticar no Microsoft SSO, MFA e gravar a 1ª rodada.'}
               </span>
