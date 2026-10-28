@@ -339,6 +339,13 @@ body {
   margin-top: 8px;
 }
 
+.hint-line {
+  margin: 8px 0 0;
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
 .button-row .btn {
   flex: 1;
 }

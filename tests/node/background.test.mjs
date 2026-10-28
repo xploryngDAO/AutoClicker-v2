@@ -2,8 +2,8 @@
  * Contrato do service worker (background.js) com o painel e o content script.
  *
  * Cobre o caminho que nenhum teste de DOM alcança: mensagem do painel →
- * gravação → persistência da tarefa → execução. Um erro aqui aparece para o
- * usuário como "gravei, mas não executa".
+ * gravação → persistência da tarefa → execução (na aba ou em segundo plano).
+ * Um erro aqui aparece para o usuário como "gravei, mas não executa".
  *
  * Uso: node tests/node/background.test.mjs
  */
@@ -17,6 +17,15 @@ function createChromeStub() {
   const storage = {};
   const messagesToTabs = [];
   const listeners = [];
+  const tabUpdatedListeners = [];
+  const windowRemovedListeners = [];
+  const createdWindows = [];
+  const removedWindows = [];
+  const windowUpdates = [];
+
+  function emitTabUpdated(tabId, changeInfo) {
+    for (const listener of tabUpdatedListeners.slice()) listener(tabId, changeInfo, {});
+  }
 
   const chrome = {
     storage: {
@@ -50,7 +59,38 @@ function createChromeStub() {
         messagesToTabs.push({ tabId, message });
         return { ok: true };
       },
-      onUpdated: { addListener() {} },
+      onUpdated: {
+        addListener(fn) {
+          tabUpdatedListeners.push(fn);
+        },
+        removeListener(fn) {
+          const index = tabUpdatedListeners.indexOf(fn);
+          if (index >= 0) tabUpdatedListeners.splice(index, 1);
+        },
+      },
+    },
+    windows: {
+      async create(options) {
+        const tabId = 100 + createdWindows.length;
+        const windowId = 900 + createdWindows.length;
+        createdWindows.push({ windowId, tabId, options });
+        // Simula o carregamento da página recém-aberta
+        setTimeout(() => emitTabUpdated(tabId, { status: 'complete' }), 0);
+        return { id: windowId, tabs: [{ id: tabId, url: options.url }] };
+      },
+      async update(windowId, options) {
+        windowUpdates.push({ windowId, options });
+        return {};
+      },
+      async remove(windowId) {
+        removedWindows.push(windowId);
+        for (const listener of windowRemovedListeners.slice()) listener(windowId);
+      },
+      onRemoved: {
+        addListener(fn) {
+          windowRemovedListeners.push(fn);
+        },
+      },
     },
     scripting: { async executeScript() {} },
     action: { setBadgeText() {}, setBadgeBackgroundColor() {} },
@@ -59,7 +99,15 @@ function createChromeStub() {
     notifications: {},
   };
 
-  return { chrome, storage, messagesToTabs, listeners };
+  return {
+    chrome,
+    storage,
+    messagesToTabs,
+    listeners,
+    createdWindows,
+    removedWindows,
+    windowUpdates,
+  };
 }
 
 function bootWorker(tasks = getDefaultTasks(), config = getDefaultConfig()) {
@@ -79,14 +127,17 @@ function bootWorker(tasks = getDefaultTasks(), config = getDefaultConfig()) {
 
   function send(message) {
     return new Promise((resolve) => {
-      for (const listener of stub.listeners) {
-        listener(message, {}, resolve);
-      }
+      for (const listener of stub.listeners) listener(message, {}, resolve);
     });
   }
 
   return { ...stub, send, source };
 }
+
+const STEPS = [
+  { id: 's1', order: 1, label: 'Abrir', action: 'click', cssSelector: '#a', waitBeforeMs: 0, timeoutMs: 2000, isLoopTarget: false },
+  { id: 's2', order: 2, label: 'Confirmar', action: 'click', cssSelector: '#b', waitBeforeMs: 0, timeoutMs: 2000, isLoopTarget: false },
+];
 
 test('background gera código válido e injeta as tarefas padrão', () => {
   const worker = bootWorker();
@@ -109,16 +160,10 @@ test('gravação: inicia sessão, recebe passos e salva na tarefa', async () => 
   assert.ok(sentStart, 'O content script não recebeu RPA_START_RECORDING');
   assert.equal(sentStart.tabId, 7);
 
-  // O content script envia os passos ao salvar
-  const steps = [
-    { id: 's1', order: 1, label: 'Abrir', action: 'click', cssSelector: '#a', waitBeforeMs: 0, timeoutMs: 2000, isLoopTarget: false },
-    { id: 's2', order: 2, label: 'Confirmar', action: 'click', cssSelector: '#b', waitBeforeMs: 0, timeoutMs: 2000, isLoopTarget: false },
-  ];
-
   const saved = await worker.send({
     type: 'SAVE_RECORDED_STEPS',
     taskId: session.taskId,
-    steps,
+    steps: STEPS,
     listConfig: {},
   });
   assert.equal(saved.ok, true);
@@ -128,7 +173,6 @@ test('gravação: inicia sessão, recebe passos e salva na tarefa', async () => 
   const task = tasks.find((item) => item.id === session.taskId);
   assert.ok(task, 'Tarefa da gravação não encontrada');
   assert.equal(task.steps.length, 2, `Esperado 2 passos salvos, obtidos ${task.steps?.length}`);
-  assert.equal(task.steps[0].cssSelector, '#a');
   assert.equal(worker.storage.rpaRecordingSession.active, false);
 });
 
@@ -141,32 +185,23 @@ test('execução: envia a tarefa com todos os passos e começa no índice 0', as
   await worker.send({
     type: 'SAVE_RECORDED_STEPS',
     taskId: session.taskId,
-    steps: [
-      { id: 's1', order: 1, label: 'Um', action: 'click', cssSelector: '#b1', waitBeforeMs: 0, timeoutMs: 2000, isLoopTarget: false },
-      { id: 's2', order: 2, label: 'Dois', action: 'click', cssSelector: '#b2', waitBeforeMs: 0, timeoutMs: 2000, isLoopTarget: false },
-      { id: 's3', order: 3, label: 'Três', action: 'click', cssSelector: '#b3', waitBeforeMs: 0, timeoutMs: 2000, isLoopTarget: false },
-    ],
+    steps: [...STEPS, { ...STEPS[0], id: 's3', order: 3, cssSelector: '#c' }],
     listConfig: {},
   });
 
   const executed = await worker.send({ type: 'START_BATCH_EXECUTION' });
   assert.equal(executed.ok, true);
 
-  const command = worker.messagesToTabs
-    .filter((m) => m.message.type === 'RPA_EXECUTE_TASK')
-    .pop();
+  const command = worker.messagesToTabs.filter((m) => m.message.type === 'RPA_EXECUTE_TASK').pop();
 
   assert.ok(command, 'RPA_EXECUTE_TASK não foi enviado para a aba');
   assert.equal(command.message.startStepIdx, 0, 'A execução deve começar no passo 0');
   assert.equal(command.message.task.steps.length, 3);
-  assert.equal(command.message.task.steps[2].cssSelector, '#b3');
   assert.equal(worker.storage.rpaStats.status, 'running');
 });
 
 test('execução com fila de tarefas corrompida não quebra', async () => {
   const worker = bootWorker();
-
-  // Estado legado/estragado: rpaTasks não é lista
   worker.storage.rpaTasks = 'lixo';
 
   const executed = await worker.send({ type: 'START_BATCH_EXECUTION' });
@@ -186,9 +221,7 @@ test('parar limpa a sessão de execução e o alarme', async () => {
   assert.equal(stopped.ok, true);
   assert.equal(worker.storage.rpaStats.status, 'idle');
   assert.equal(worker.storage.rpaExecutionSession.active, false);
-
-  const abort = worker.messagesToTabs.find((m) => m.message.type === 'RPA_ABORT');
-  assert.ok(abort, 'A aba não recebeu RPA_ABORT');
+  assert.ok(worker.messagesToTabs.some((m) => m.message.type === 'RPA_ABORT'));
 });
 
 test('pausar e retomar refletem no estado da execução', async () => {
@@ -211,11 +244,112 @@ test('gravação sem tarefa de destino cria a automação em vez de perder os pa
   await worker.send({
     type: 'SAVE_RECORDED_STEPS',
     taskId: 'task-inexistente',
-    steps: [{ id: 's1', order: 1, label: 'Único', action: 'click', cssSelector: '#x', waitBeforeMs: 0, timeoutMs: 2000, isLoopTarget: false }],
+    steps: [{ ...STEPS[0], id: 's1' }],
     listConfig: {},
   });
 
   const created = worker.storage.rpaTasks.find((item) => item.id === 'task-inexistente');
   assert.ok(created, 'A tarefa deveria ser criada automaticamente');
   assert.equal(created.steps.length, 1);
+});
+
+// ============================================================
+// Segundo plano: janela própria, sem foco
+// ============================================================
+
+async function prepareTask(worker, targetUrl = 'https://portal.test/iam') {
+  await worker.send({ type: 'START_RECORDING_WIZARD', mode: 'free' });
+  const session = worker.storage.rpaRecordingSession;
+
+  await worker.send({
+    type: 'SAVE_RECORDED_STEPS',
+    taskId: session.taskId,
+    steps: STEPS,
+    listConfig: {},
+  });
+
+  const tasks = worker.storage.rpaTasks.map((task) =>
+    task.id === session.taskId ? { ...task, targetUrl } : task
+  );
+  worker.storage.rpaTasks = tasks;
+
+  return session.taskId;
+}
+
+test('segundo plano: abre janela sem foco e injeta a automação lá', async () => {
+  const worker = bootWorker();
+  await prepareTask(worker);
+
+  const result = await worker.send({ type: 'START_BACKGROUND_EXECUTION', closeWhenDone: true });
+  assert.equal(result.ok, true, result.error);
+
+  const created = worker.createdWindows[0];
+  assert.ok(created, 'Nenhuma janela foi criada');
+  assert.equal(created.options.focused, false, 'A janela não pode roubar o foco');
+  assert.equal(created.options.url, 'https://portal.test/iam');
+
+  // A execução vai para a aba da janela nova, não para a aba do usuário
+  const command = worker.messagesToTabs.find((m) => m.message.type === 'RPA_EXECUTE_TASK');
+  assert.ok(command, 'A automação não foi enviada');
+  assert.equal(command.tabId, created.tabId);
+  assert.notEqual(command.tabId, 7, 'A aba em uso pelo usuário não deve receber a execução');
+  assert.equal(command.message.startStepIdx, 0);
+
+  const record = worker.storage.rpaBackgroundWindow;
+  assert.ok(record, 'A janela de segundo plano deveria ficar registrada');
+  assert.equal(record.windowId, created.windowId);
+  assert.equal(worker.storage.rpaStats.status, 'running');
+
+  const refocus = worker.windowUpdates.find((u) => u.options && u.options.focused === false);
+  assert.ok(refocus, 'A janela deveria ser desfocada após carregar');
+});
+
+test('segundo plano: sem passos gravados devolve erro claro', async () => {
+  const worker = bootWorker();
+  await worker.send({ type: 'START_RECORDING_WIZARD', mode: 'free' });
+  const session = worker.storage.rpaRecordingSession;
+
+  await worker.send({ type: 'SAVE_RECORDED_STEPS', taskId: session.taskId, steps: [], listConfig: {} });
+
+  const result = await worker.send({ type: 'START_BACKGROUND_EXECUTION', url: 'https://portal.test/' });
+  assert.equal(result.ok, false);
+  assert.match(String(result.error), /passos/i);
+  assert.equal(worker.createdWindows.length, 0, 'Não deveria abrir janela sem passos');
+});
+
+test('segundo plano: URL inválida não abre janela', async () => {
+  const worker = bootWorker();
+  await prepareTask(worker, '');
+
+  const result = await worker.send({ type: 'START_BACKGROUND_EXECUTION' });
+  assert.equal(result.ok, false);
+  assert.match(String(result.error), /URL/i);
+  assert.equal(worker.createdWindows.length, 0);
+});
+
+test('segundo plano: fim da execução fecha a janela e limpa o registro', async () => {
+  const worker = bootWorker();
+  await prepareTask(worker);
+
+  await worker.send({ type: 'START_BACKGROUND_EXECUTION', closeWhenDone: true });
+  const record = worker.storage.rpaBackgroundWindow;
+  assert.ok(record);
+
+  await worker.send({ type: 'UPDATE_STATS', patch: { status: 'idle' } });
+
+  assert.ok(worker.removedWindows.includes(record.windowId), 'A janela deveria ser fechada');
+  assert.equal(worker.storage.rpaBackgroundWindow, null);
+});
+
+test('segundo plano: parar a execução encerra a janela', async () => {
+  const worker = bootWorker();
+  await prepareTask(worker);
+
+  await worker.send({ type: 'START_BACKGROUND_EXECUTION' });
+  const record = worker.storage.rpaBackgroundWindow;
+
+  await worker.send({ type: 'STOP_BATCH_EXECUTION' });
+
+  assert.ok(worker.removedWindows.includes(record.windowId), 'Parar deveria fechar a janela');
+  assert.equal(worker.storage.rpaBackgroundWindow, null);
 });

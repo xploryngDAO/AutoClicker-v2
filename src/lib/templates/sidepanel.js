@@ -10,6 +10,7 @@
     logs: [],
     workflow: {},
     recording: { active: false },
+    background: null,
     openStepId: null,
   };
 
@@ -235,7 +236,14 @@
 
     var label = stats.status === 'running' ? 'Executando' : stats.status === 'paused' ? 'Pausado' : 'Pronto';
     setText('st-status', label);
-    setText('st-status-sub', stats.status === 'running' ? 'não feche a aba' : 'aguardando início');
+
+    if (state.background) {
+      setText('st-status-sub', 'janela separada');
+    } else if (stats.status === 'running') {
+      setText('st-status-sub', 'não feche a aba');
+    } else {
+      setText('st-status-sub', 'aguardando início');
+    }
   }
 
   function renderLogs() {
@@ -292,6 +300,7 @@
     state.logs = Array.isArray(response.logs) ? response.logs : [];
     state.workflow = response.workflow || {};
     state.recording = response.recording || { active: false };
+    state.background = response.background || null;
 
     renderAll();
   }
@@ -522,6 +531,40 @@
     if (stop) {
       stop.addEventListener('click', async function () {
         await sendMessage({ type: 'STOP_BATCH_EXECUTION' });
+        await refresh();
+      });
+    }
+
+    var background = $('btn-background');
+    if (background) {
+      background.addEventListener('click', async function () {
+        var task = state.activeTask;
+        if (!task) {
+          window.alert('Selecione uma automação.');
+          return;
+        }
+        if (!Array.isArray(task.steps) || task.steps.length === 0) {
+          window.alert('Grave pelo menos um passo antes de executar.');
+          return;
+        }
+
+        var url = String(task.targetUrl || (state.workflow && state.workflow.targetUrl) || '').trim();
+        if (!/^https?:\/\//i.test(url)) {
+          url = window.prompt('URL do portal para executar em segundo plano:', url || 'https://');
+          if (!url) return;
+        }
+
+        var response = await sendMessage({
+          type: 'START_BACKGROUND_EXECUTION',
+          url: url.trim(),
+          closeWhenDone: true,
+        });
+
+        if (!response || response.ok === false) {
+          window.alert((response && response.error) || 'Não foi possível iniciar em segundo plano.');
+          return;
+        }
+
         await refresh();
       });
     }

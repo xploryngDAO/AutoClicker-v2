@@ -11,6 +11,7 @@ const STORAGE_KEYS = [
   'rpaStats',
   'rpaRecordingSession',
   'rpaExecutionSession',
+  'rpaBackgroundWindow',
 ];
 
 function isTaskArray(value) {
@@ -83,6 +84,130 @@ async function pushLog(level, message) {
   await writeStorage({ rpaLogs: next });
 }
 
+/**
+ * Execução em segundo plano: abre uma janela própria, sem foco, para a
+ * automação. A aba em que o usuário está trabalhando não é tocada — nada de
+ * scroll, foco ou clique por cima do que ele está fazendo.
+ */
+async function startBackgroundRun(task, config, options) {
+  const opts = options || {};
+  const targetUrl = String(opts.url || task.targetUrl || config.targetUrl || '').trim();
+
+  if (!/^https?:\/\//i.test(targetUrl)) {
+    return { ok: false, error: 'Defina a URL do portal antes de executar em segundo plano.' };
+  }
+
+  let created;
+  try {
+    created = await chrome.windows.create({
+      url: targetUrl,
+      focused: false,
+      type: 'normal',
+      width: 1180,
+      height: 860,
+      left: 40,
+      top: 40,
+    });
+  } catch (err) {
+    return { ok: false, error: 'Não foi possível abrir a janela de execução: ' + String(err) };
+  }
+
+  const windowId = created && created.id;
+  const tabId = created && created.tabs && created.tabs[0] && created.tabs[0].id;
+
+  if (!tabId) {
+    return { ok: false, error: 'A janela de execução abriu sem aba utilizável.' };
+  }
+
+  await writeStorage({
+    rpaBackgroundWindow: {
+      windowId: windowId,
+      tabId: tabId,
+      taskId: task.id,
+      closeWhenDone: opts.closeWhenDone !== false,
+      startedAt: new Date().toISOString(),
+    },
+  });
+
+  await waitForTabLoad(tabId, 45000);
+
+  // Garante que a janela não ganhou foco ao terminar de carregar
+  try {
+    await chrome.windows.update(windowId, { focused: false });
+  } catch (err) {
+    /* algumas plataformas não suportam */
+  }
+
+  const response = await sendToTab(
+    tabId,
+    { type: 'RPA_EXECUTE_TASK', task: task, config: config, startStepIdx: 0 },
+    true
+  );
+
+  if (!response) {
+    await writeStorage({ rpaBackgroundWindow: null });
+    try {
+      await chrome.windows.remove(windowId);
+    } catch (err) {
+      /* já fechada */
+    }
+    return { ok: false, error: 'A página do portal não aceitou o script de automação.' };
+  }
+
+  await pushLog(
+    'info',
+    'Execução em segundo plano iniciada em janela separada. Você pode continuar navegando.'
+  );
+
+  return { ok: true, windowId: windowId, tabId: tabId };
+}
+
+function waitForTabLoad(tabId, timeoutMs) {
+  return new Promise((resolve) => {
+    let finished = false;
+    let timer = null;
+
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      if (timer) clearTimeout(timer);
+      try {
+        chrome.tabs.onUpdated.removeListener(listener);
+      } catch (err) {
+        /* listener já removido */
+      }
+      resolve(true);
+    };
+
+    const listener = (updatedTabId, changeInfo) => {
+      if (updatedTabId === tabId && changeInfo && changeInfo.status === 'complete') {
+        finish();
+      }
+    };
+
+    try {
+      chrome.tabs.onUpdated.addListener(listener);
+    } catch (err) {
+      finish();
+      return;
+    }
+
+    timer = setTimeout(finish, timeoutMs);
+  });
+}
+
+async function closeBackgroundWindow() {
+  const { rpaBackgroundWindow } = await readStorage('rpaBackgroundWindow');
+  if (!rpaBackgroundWindow) return;
+
+  try {
+    await chrome.windows.remove(rpaBackgroundWindow.windowId);
+  } catch (err) {
+    /* janela já fechada pelo usuário */
+  }
+  await writeStorage({ rpaBackgroundWindow: null });
+}
+
 // ==========================================
 // INSTALAÇÃO / ATUALIZAÇÃO
 // ==========================================
@@ -148,6 +273,21 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 // ==========================================
 // HEARTBEAT
 // ==========================================
+// Janela de segundo plano fechada (pelo usuário ou pelo fim da execução)
+try {
+  if (chrome.windows && chrome.windows.onRemoved && chrome.windows.onRemoved.addListener) {
+    chrome.windows.onRemoved.addListener(async (windowId) => {
+      const { rpaBackgroundWindow } = await readStorage('rpaBackgroundWindow');
+      if (rpaBackgroundWindow && rpaBackgroundWindow.windowId === windowId) {
+        await writeStorage({ rpaBackgroundWindow: null });
+        await pushLog('warn', 'A janela de execução em segundo plano foi fechada.');
+      }
+    });
+  }
+} catch (err) {
+  /* API de janelas indisponível */
+}
+
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name !== 'rpa-heartbeat') return;
 
@@ -183,6 +323,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         logs: state.rpaLogs || [],
         workflow: state.rpaWorkflow || DEFAULT_CONFIG,
         recording: state.rpaRecordingSession || { active: false },
+        background: state.rpaBackgroundWindow || null,
       });
       return;
     }
@@ -324,7 +465,62 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         rpaStats: { ...rpaStats, status: 'idle' },
         rpaExecutionSession: { active: false },
       });
+
+      // Encerra também a janela de segundo plano, se houver
+      await closeBackgroundWindow();
+
       sendResponse({ ok: true });
+      return;
+    }
+
+    if (message.type === 'START_BACKGROUND_EXECUTION') {
+      const { rpaTasks = [], rpaActiveTaskId, rpaWorkflow = {}, rpaStats = {} } = await readStorage([
+        'rpaTasks',
+        'rpaActiveTaskId',
+        'rpaWorkflow',
+        'rpaStats',
+      ]);
+
+      const tasks = Array.isArray(rpaTasks) && rpaTasks.length > 0 ? rpaTasks : DEFAULT_TASKS;
+      const activeTask = tasks.find((task) => task.id === rpaActiveTaskId) || tasks[0];
+
+      if (!activeTask) {
+        sendResponse({ ok: false, error: 'Nenhuma automação configurada.' });
+        return;
+      }
+
+      if (!Array.isArray(activeTask.steps) || activeTask.steps.length === 0) {
+        sendResponse({ ok: false, error: 'Esta automação ainda não tem passos gravados.' });
+        return;
+      }
+
+      const result = await startBackgroundRun(activeTask, rpaWorkflow, {
+        url: message.url,
+        closeWhenDone: message.closeWhenDone,
+      });
+
+      if (!result.ok) {
+        sendResponse(result);
+        return;
+      }
+
+      await writeStorage({
+        rpaStats: { ...rpaStats, status: 'running', activeTabId: result.tabId },
+      });
+
+      sendResponse({ ok: true, windowId: result.windowId, tabId: result.tabId });
+      return;
+    }
+
+    if (message.type === 'CLOSE_BACKGROUND_WINDOW') {
+      await closeBackgroundWindow();
+      sendResponse({ ok: true });
+      return;
+    }
+
+    if (message.type === 'GET_BACKGROUND_STATE') {
+      const { rpaBackgroundWindow = null } = await readStorage('rpaBackgroundWindow');
+      sendResponse({ ok: true, background: rpaBackgroundWindow });
       return;
     }
 
@@ -443,6 +639,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         : logs;
 
       await writeStorage({ rpaStats: nextStats, rpaLogs: nextLogs });
+
+      // Fim da execução em segundo plano: fecha a janela se o usuário pediu
+      if (message.patch && message.patch.status === 'idle') {
+        const { rpaBackgroundWindow } = await readStorage('rpaBackgroundWindow');
+        if (rpaBackgroundWindow && rpaBackgroundWindow.closeWhenDone !== false) {
+          await closeBackgroundWindow();
+        }
+      }
+
       sendResponse({ ok: true });
       return;
     }
