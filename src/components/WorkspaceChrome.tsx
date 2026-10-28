@@ -276,10 +276,20 @@ export function WorkspaceChrome({
         <div className="bg-slate-900 text-white px-4 py-1.5 border-t border-slate-800 text-[11px]">
           <div className="max-w-[1440px] mx-auto flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-              <span className="text-emerald-300 font-bold">Chromium Real Ativo no Servidor:</span>
+              <span
+                className={
+                  demoMode
+                    ? 'w-2 h-2 rounded-full bg-amber-400'
+                    : 'w-2 h-2 rounded-full bg-emerald-400 animate-ping'
+                }
+              />
+              <span className={demoMode ? 'text-amber-300 font-bold' : 'text-emerald-300 font-bold'}>
+                {demoMode ? 'Modo local no navegador:' : 'Chromium Real Ativo no Servidor:'}
+              </span>
               <span className="text-slate-300">
-                Acesse a aba <strong>Navegador Interno Real</strong> para autenticar no Microsoft SSO, MFA e gravar a 1ª rodada.
+                {demoMode
+                  ? 'o motor roda nesta aba. O Chromium interno exige o servidor local; use a extensão para gravar no portal.'
+                  : 'Acesse a aba Navegador Interno Real para autenticar no Microsoft SSO, MFA e gravar a 1ª rodada.'}
               </span>
             </div>
             <div className="flex items-center gap-3 text-slate-400">

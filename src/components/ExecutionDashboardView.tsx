@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { downloadExport } from '../lib/downloads';
+import { isLocalMode } from '../lib/localApiBridge';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -193,15 +194,41 @@ export function ExecutionDashboardView({
       {/* Banner Principal em Destaque: Navegador Interno & Extensão */}
       <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white rounded-2xl p-6 shadow-md border-2 border-blue-500/40 flex flex-col md:flex-row items-center justify-between gap-5">
         <div className="space-y-2 text-center md:text-left">
-          <div className="inline-flex items-center gap-2 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-3 py-1 rounded-full text-xs font-bold">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-            Navegador Chromium Real 155 Ativo no Servidor
+          <div
+            className={
+              isLocalMode()
+                ? 'inline-flex items-center gap-2 bg-amber-500/20 text-amber-200 border border-amber-500/40 px-3 py-1 rounded-full text-xs font-bold'
+                : 'inline-flex items-center gap-2 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-3 py-1 rounded-full text-xs font-bold'
+            }
+          >
+            <span
+              className={
+                isLocalMode()
+                  ? 'w-2 h-2 rounded-full bg-amber-400'
+                  : 'w-2 h-2 rounded-full bg-emerald-400 animate-ping'
+              }
+            />
+            {isLocalMode()
+              ? 'Navegador interno: requer servidor local'
+              : 'Navegador Chromium Real Ativo no Servidor'}
           </div>
           <h2 className="text-xl sm:text-2xl font-black tracking-tight">
             Treinar Robô na 1ª Rodada & Login Microsoft SSO
           </h2>
           <p className="text-sm text-slate-300 max-w-2xl leading-relaxed">
-            Acesse o <strong>Navegador Interno Real</strong> para autenticar no seu portal corporativo, aprovar MFA no Authenticator e gravar os passos da primeira concessão para replicar nas outras 417 aprovações.
+            {isLocalMode() ? (
+              <>
+                Neste site o estúdio roda no seu navegador. Para o Chromium interno com captura de
+                tela, rode <code className="bg-white/10 px-1 rounded">npm run dev</code> na sua
+                máquina. Para gravar direto no portal, use a extensão.
+              </>
+            ) : (
+              <>
+                Acesse o <strong>Navegador Interno Real</strong> para autenticar no seu portal
+                corporativo, aprovar MFA no Authenticator e gravar os passos da primeira concessão
+                para replicar nas outras 417 aprovações.
+              </>
+            )}
           </p>
         </div>
 
@@ -212,7 +239,7 @@ export function ExecutionDashboardView({
             className="w-full sm:w-auto px-5 py-3.5 bg-blue-600 hover:bg-blue-500 text-white font-black text-sm rounded-xl shadow-lg transition-all flex items-center justify-center gap-2.5 cursor-pointer ring-2 ring-blue-400"
           >
             <Globe className="w-5 h-5 text-white" />
-            <span>ABRIR NAVEGADOR INTERNO REAL ➔</span>
+            <span>{isLocalMode() ? 'COMO USAR O NAVEGADOR INTERNO ➔' : 'ABRIR NAVEGADOR INTERNO REAL ➔'}</span>
           </button>
 
           <button
