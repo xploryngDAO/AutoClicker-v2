@@ -19,7 +19,10 @@
     "prelint": "npm run gen",
     "lint": "tsc --noEmit",
     "pretest": "npm run gen",
-    "test": "tsx --test src/lib/*.test.ts"
+    "test": "tsx --test src/lib/*.test.ts",
+    "test:bg": "node tests/node/background.test.mjs",
+    "test:e2e": "node tests/e2e/extension.e2e.mjs",
+    "verify": "npm run gen && npm run lint && npm run test && npm run test:bg && npm run test:e2e"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

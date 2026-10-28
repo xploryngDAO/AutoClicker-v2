@@ -671,8 +671,20 @@
     }
   }
 
+  function renderVersion() {
+    var badge = $('ext-version');
+    if (!badge) return;
+    try {
+      var manifest = chrome.runtime.getManifest ? chrome.runtime.getManifest() : null;
+      badge.textContent = 'v' + ((manifest && manifest.version) || '?');
+    } catch (err) {
+      badge.textContent = 'v?';
+    }
+  }
+
   bindStaticEvents();
   watchStorage();
+  renderVersion();
   refresh();
   syncScroll();
 
